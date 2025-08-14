@@ -1,0 +1,13 @@
+
+[req]
+authoritykeyidentifier         = "keyid,issuer"
+basicconstraints               = "CA:FALSE"
+keyusage                       = "digitalSignature, nonRepudiation, keyEncipherment, dataEncipherment"
+subjectaltname                 = "@alt_names"
+
+
+[alt_names]
+dns.1                          = "*.sitesup.com"
+ip.1                           = "10.166.64.107"
+
+
