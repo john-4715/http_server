@@ -2,6 +2,7 @@
 
 #include "certProtocol.hpp"
 #include "https_server.hpp"
+#include "certMgr.hpp"
 
 int main(int argc, char **argv)
 {
@@ -10,17 +11,21 @@ int main(int argc, char **argv)
 	struct evhttp_bound_socket *handle;
 	SSL_CTX *ssl_ctx;
 
-	if (argc != 4)
-	{
-		fprintf(stderr, "Usage: %s <certificate file> <private key file> <port>\n", argv[0]);
-		return 1;
-	}
-	clearResource();
-	// 初始化OpenSSL
+    // 初始化OpenSSL
 	init_openssl();
 
+    std::string cacert_path = "./output/ca.crt";
+	std::string cakey_path = "./output/ca.key";
+	generate_ca_certificate(cakey_path, cacert_path);
+
+	std::string csrfile = "./output/server.csr";
+	std::string serverCert = "./output/server.crt";
+    std::string serverKey = "./output/server.key";
+
+	sign_serverCert(csrfile, cacert_path, cakey_path, serverCert, serverKey);
+
 	// 创建SSL上下文
-	ssl_ctx = create_ssl_ctx(argv[1], argv[2]);
+	ssl_ctx = create_ssl_ctx(cacert_path.c_str(), serverCert.c_str(), serverKey.c_str());
 	if (!ssl_ctx)
 	{
 		return 1;
@@ -49,7 +54,7 @@ int main(int argc, char **argv)
 	evhttp_set_bevcb(http, create_ssl_bufferevent, ssl_ctx);
 
 	// 绑定到指定端口
-	handle = evhttp_bind_socket_with_handle(http, "0.0.0.0", atoi(argv[3]));
+	handle = evhttp_bind_socket_with_handle(http, "0.0.0.0", 8443);
 	if (!handle)
 	{
 		fprintf(stderr, "Failed to bind to port %s\n", argv[3]);

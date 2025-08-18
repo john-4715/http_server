@@ -33,9 +33,10 @@
 
 void http_request_handler(struct evhttp_request *req, void *arg);
 
-SSL_CTX *create_ssl_ctx(const char *cert_file, const char *key_file);
+SSL_CTX *create_ssl_ctx(const char * cacert, const char *servercert, const char *serverkey);
 
 struct bufferevent *create_ssl_bufferevent(struct event_base *base, void *arg);
 
 void clearResource();
+
 #endif

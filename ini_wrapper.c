@@ -88,6 +88,56 @@ int ini_get_boolean(ini_config *config, const char *section, const char *key, in
 	return result;
 }
 
+// 保存原始键名到值中
+void iniparser_preserve_case_save(dictionary *dict, const char *key, const char *value)
+{
+	char preserved_key[256];
+	snprintf(preserved_key, sizeof(preserved_key), "_ORIG_%s", key);
+	iniparser_set(dict, preserved_key, key); // 保存原始键名
+	iniparser_set(dict, key, value);		 // 使用库的标准设置
+}
+
+// 获取原始键名
+const char *iniparser_preserve_case_get_original_key(dictionary *dict, const char *key)
+{
+	char preserved_key[256];
+	snprintf(preserved_key, sizeof(preserved_key), "_ORIG_%s", key);
+	return iniparser_getstring(dict, preserved_key, key);
+}
+
+// 写入文件时恢复原始键名
+void iniparser_preserve_case_dump(dictionary *dict, FILE *f)
+{
+	int nsec = iniparser_getnsec(dict);
+	for (int i = 0; i < nsec; i++)
+	{
+		const char *sec = iniparser_getsecname(dict, i);
+		fprintf(f, "[%s]\n", sec);
+
+		int nkeys = iniparser_getsecnkeys(dict, sec);
+		const char **keylist = NULL; // 先初始化为 NULL
+		const char **keys = iniparser_getseckeys(dict, sec, keylist);
+
+		for (int j = 0; j < nkeys; j++)
+		{
+			// 检查是否是我们的保留键
+			if (strncmp(keys[j], "_ORIG_", 6) == 0)
+				continue;
+
+			// 尝试获取原始键名
+			const char *orig_key = iniparser_preserve_case_get_original_key(dict, keys[j]);
+			const char *value = iniparser_getstring(dict, keys[j], NULL);
+
+			if (value)
+			{
+				fprintf(f, "%s = %s\n", orig_key, value);
+			}
+		}
+		fprintf(f, "\n");
+		free(keys);
+	}
+}
+
 // 设置字符串值
 void ini_set(ini_config *config, const char *section, const char *key, const char *value)
 {
@@ -124,3 +174,4 @@ void ini_remove_key(ini_config *config, const char *section, const char *key)
 	iniparser_unset(config, full_key);
 	free(full_key);
 }
+

@@ -40,6 +40,8 @@ bool parseCSRequest(const std::string &request, CSR_REQ_BODY &reqbody);
 
 bool parseRenewCertRequest(const std::string &request, RENEWCERT_REQ_BODY &reqbody);
 
+std::string BuildRunningRespBody();
+
 std::string BuildCsrRespBody();
 
 std::string BuildChallengeCertRespBody();

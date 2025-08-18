@@ -24,8 +24,10 @@ bool saveContentToFile(const std::string &content, const std::string &filename);
 // 生成自签名
 bool generate_ca_certificate(std::string cakey_path, std::string cacert_path);
 // 颁发证书
-bool sign_certificate(std::string csrfile, std::string cafile, std::string cakeyfile, std::string certfile,
+bool sign_clientcert(std::string csrfile, std::string cafile, std::string cakeyfile, std::string certfile,
 					  std::string extfile_path);
+
+bool sign_serverCert(std::string csrfile, std::string cafile, std::string cakey, std::string servercert, std::string serverkey);
 
 void remove_passphrase(const std::string& in_keyfile, const std::string& out_keyfile);
 #endif

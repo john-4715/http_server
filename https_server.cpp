@@ -9,33 +9,53 @@
 #include "utils.h"
 
 static std::string csr;
-
+bool m_isRunning = false;
 // 创建SSL上下文
-SSL_CTX *create_ssl_ctx(const char *cert_file, const char *key_file)
+SSL_CTX *create_ssl_ctx(const char * cacert, const char *servercert, const char *serverkey)
 {
 	SSL_CTX *ctx;
-
+	// 创建 SSL 上下文
 	ctx = SSL_CTX_new(TLS_server_method());
 	if (!ctx)
 	{
 		fprintf(stderr, "Failed to create SSL context\n");
 		return NULL;
 	}
-
-	if (SSL_CTX_use_certificate_file(ctx, cert_file, SSL_FILETYPE_PEM) <= 0)
+	// 设置 SSL 选项
+	SSL_CTX_set_options(ctx, SSL_OP_SINGLE_DH_USE | SSL_OP_SINGLE_ECDH_USE);
+	SSL_CTX_set_min_proto_version(ctx, TLS1_2_VERSION);
+	// 加载服务器证书
+	if (SSL_CTX_use_certificate_file(ctx, servercert, SSL_FILETYPE_PEM) <= 0)
 	{
 		fprintf(stderr, "Failed to load certificate file\n");
 		SSL_CTX_free(ctx);
 		return NULL;
 	}
-
-	if (SSL_CTX_use_PrivateKey_file(ctx, key_file, SSL_FILETYPE_PEM) <= 0)
+	// 加载服务器私钥
+	if (SSL_CTX_use_PrivateKey_file(ctx, serverkey, SSL_FILETYPE_PEM) <= 0)
 	{
 		fprintf(stderr, "Failed to load private key file\n");
 		SSL_CTX_free(ctx);
 		return NULL;
 	}
+	// 验证私钥是否匹配
+	if (!SSL_CTX_check_private_key(ctx))
+	{
+		fprintf(stderr, "Private key does not match the certificate public key\n");
+		exit(EXIT_FAILURE);
+	}
+#if 0
+	// 加载 CA 证书用于验证客户端
+	if (SSL_CTX_load_verify_locations(ctx, cacert, NULL) != 1)
+	{
+		ERR_print_errors_fp(stderr);
+		exit(EXIT_FAILURE);
+	}
 
+	// 设置客户端证书验证
+	SSL_CTX_set_verify(ctx, SSL_VERIFY_PEER | SSL_VERIFY_FAIL_IF_NO_PEER_CERT, NULL);
+	SSL_CTX_set_verify_depth(ctx, 4);
+#endif
 	return ctx;
 }
 
@@ -79,7 +99,7 @@ void updateExtentFile(std::string extfile_path, std::string clientIp)
 		return;
 	}
 
-	ini_set(config, "alt_names", "ip.1", clientIp.c_str());
+	ini_set(config, "alt_names", "IP.1", clientIp.c_str());
 
 	// 保存配置
 	if (ini_save(config, extfile_path.c_str()))
@@ -110,10 +130,31 @@ void makeResponse(struct evhttp_request *req, std::string body, std::string clie
 	// 添加HTTP headers
 	evhttp_add_header(evhttp_request_get_output_headers(req), "Content-Type", "text/plain");
 	evhttp_add_header(evhttp_request_get_output_headers(req), "Connection", "close");
-	// 解析url
-	ENUM_HTTP_REQ_TYPE reqType = parseUrl(req->uri);
+
 	std::string respBody;
 	std::string msgInfo;
+	if (m_isRunning)
+	{
+		respBody = BuildRunningRespBody();
+
+		msgInfo = "IsRunning";
+		// 添加HTTP body
+		evbuffer_add_printf(evb, "%s", respBody.c_str());
+		// evbuffer_add_printf(evb, "Hello, HTTPS World!\n");
+		fprintf(stdout, "***********************************************\n");
+		fprintf(stdout, "http server send %s to client.\n", msgInfo.c_str());
+		fprintf(stdout, "***********************************************\n\n\n");
+		// 发送HTTP响应
+		evhttp_send_reply(req, HTTP_OK, "OK", evb);
+
+		// 释放evbuffer
+		evbuffer_free(evb);
+		return;
+	}
+
+	// 解析url
+	ENUM_HTTP_REQ_TYPE reqType = parseUrl(req->uri);
+
 	CSR_REQ_BODY csrReqBody;
 	RENEWCERT_REQ_BODY renewReqBody;
 
@@ -121,16 +162,13 @@ void makeResponse(struct evhttp_request *req, std::string body, std::string clie
 	{
 	case ENUM_HTTP_REQ_CSR:
 	{
+		m_isRunning = true;
 		char cmd[256];
-		sprintf(cmd, "rm -rf ./output/*.key ./output/*.crt ./output/*.csr");
+		sprintf(cmd, "rm -rf ./output/client.*");
 		system(cmd);
 
 		parseCSRequest(body, csrReqBody);
 		saveContentToFile(csrReqBody.csr, "./output/client.csr");
-
-		std::string cakey_path = "./output/ca.key";
-		std::string cacert_path = "./output/ca.crt";
-		generate_ca_certificate(cakey_path, cacert_path);
 
 		std::string csrfile = "./output/client.csr";
 		std::string cafile = "./output/ca.crt";
@@ -140,10 +178,11 @@ void makeResponse(struct evhttp_request *req, std::string body, std::string clie
 
 		updateExtentFile(extfile_path, clientIp);
 
-		sign_certificate(csrfile, cafile, cakeyfile, certfile, extfile_path);
+		sign_clientcert(csrfile, cafile, cakeyfile, certfile, extfile_path);
 
 		respBody = BuildCsrRespBody();
 		msgInfo = "csr response";
+		m_isRunning = false;
 	}
 	break;
 	case ENUM_HTTP_REQ_CHALLENGE:

@@ -77,6 +77,16 @@ bool parseRenewCertRequest(const std::string &request, RENEWCERT_REQ_BODY &reqbo
 #define POST_BODY_SPARKPLUG "sparkplug"
 #define POST_BODY_GROUPID "groupId"
 #define POST_BODY_HOSTID "hostId"
+
+std::string BuildRunningRespBody()
+{
+	Json::Value root;
+	root["code"] = 0;
+	root["message"] = "http server is running.";
+	std::string strOut = root.toString();
+	return strOut;
+}
+
 std::string BuildCsrRespBody()
 {
 	Json::Value root;
@@ -142,10 +152,6 @@ std::string BuildRenewCertRespBody()
 	std::string caChainData;
 	std::string signCA;
 	std::string certificate;
-
-	std::string cakey_path = "./output/ca.key";
-	std::string cacert_path = "./output/ca.crt";
-	generate_ca_certificate(cakey_path, cacert_path);
 
 	read_file_to_memory((const char *)"./renewcert/ca.crt", caChainData);
 	read_file_to_memory((const char *)"./renewcert/client.crt", signCA);

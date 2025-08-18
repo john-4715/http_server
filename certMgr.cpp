@@ -351,8 +351,8 @@ void print_section(const char *name, STACK_OF(CONF_VALUE) * section)
 	}
 }
 
-bool sign_certificate(std::string csrfile, std::string cafile, std::string cakeyfile, std::string certfile,
-					  std::string extfile_path)
+bool sign_clientcert(std::string csrfile, std::string cafile, std::string cakeyfile, std::string certfile,
+					 std::string extfile_path)
 {
 	bool bRet = false;
 
@@ -490,7 +490,7 @@ bool sign_certificate(std::string csrfile, std::string cafile, std::string cakey
 				X509_EXTENSION_free(ext);
 			}
 		}
-		
+
 		// 检查各个节
 		// print_section("req", NCONF_get_section(conf, "req"));
 		// print_section("alt_names", NCONF_get_section(conf, "alt_names"));
@@ -556,4 +556,299 @@ void remove_passphrase(const std::string &in_keyfile, const std::string &out_key
 
 	fclose(out_fp);
 	RSA_free(rsa);
+}
+
+// 错误处理函数
+void handle_openssl_error(const char *msg)
+{
+	fprintf(stderr, "%s\n", msg);
+	ERR_print_errors_fp(stderr);
+	exit(EXIT_FAILURE);
+}
+
+// 1. 生成 RSA 私钥并保存到文件
+RSA *generate_rsa_key(const char *key_file)
+{
+	RSA *rsa = NULL;
+	BIGNUM *bne = NULL;
+	BIO *bp = NULL;
+
+	// 创建大数对象用于 RSA 生成
+	bne = BN_new();
+	if (!BN_set_word(bne, RSA_F4))
+	{
+		handle_openssl_error("Failed to set RSA exponent");
+	}
+
+	// 生成 RSA 密钥对
+	rsa = RSA_new();
+	if (!RSA_generate_key_ex(rsa, 2048, bne, NULL))
+	{
+		handle_openssl_error("Failed to generate RSA key");
+	}
+
+	// 保存私钥到文件
+	bp = BIO_new_file(key_file, "w");
+	if (!PEM_write_bio_RSAPrivateKey(bp, rsa, NULL, NULL, 0, NULL, NULL))
+	{
+		handle_openssl_error("Failed to write private key");
+	}
+
+	printf("Generated RSA private key: %s\n", key_file);
+
+	// 清理资源
+	BIO_free(bp);
+	BN_free(bne);
+
+	return rsa;
+}
+
+// 2. 创建证书签名请求 (CSR)
+X509_REQ *create_certificate_signing_request(RSA *rsa, const char *csr_file, const char *subject)
+{
+	X509_REQ *req = X509_REQ_new();
+	EVP_PKEY *pkey = EVP_PKEY_new();
+	X509_NAME *name = NULL;
+	BIO *bp = NULL;
+
+	// 设置公钥
+	EVP_PKEY_assign_RSA(pkey, rsa);
+
+	// 设置 CSR 版本
+	if (!X509_REQ_set_version(req, 1L))
+	{ // version 1 (0-indexed)
+		handle_openssl_error("Failed to set CSR version");
+	}
+
+	// 设置主题信息
+	name = X509_REQ_get_subject_name(req);
+
+	// 解析 subject 字符串 (格式: "/C=CN/ST=Shanxi/L=Xian/O=EXEC/OU=DS/CN=10.0.2.15")
+	const char *p = subject;
+	char *key = NULL, *value = NULL;
+
+	while (*p)
+	{
+		if (*p == '/')
+		{
+			p++;
+			const char *eq = strchr(p, '=');
+			if (!eq)
+				break;
+
+			key = strndup(p, eq - p);
+			p = eq + 1;
+
+			const char *next = strchr(p, '/');
+			if (!next)
+				next = p + strlen(p);
+
+			value = strndup(p, next - p);
+			p = next;
+
+			// 添加名称条目
+			if (strcmp(key, "C") == 0)
+			{
+				X509_NAME_add_entry_by_txt(name, "C", MBSTRING_ASC, (const unsigned char *)value, -1, -1, 0);
+			}
+			else if (strcmp(key, "ST") == 0)
+			{
+				X509_NAME_add_entry_by_txt(name, "ST", MBSTRING_ASC, (const unsigned char *)value, -1, -1, 0);
+			}
+			else if (strcmp(key, "L") == 0)
+			{
+				X509_NAME_add_entry_by_txt(name, "L", MBSTRING_ASC, (const unsigned char *)value, -1, -1, 0);
+			}
+			else if (strcmp(key, "O") == 0)
+			{
+				X509_NAME_add_entry_by_txt(name, "O", MBSTRING_ASC, (const unsigned char *)value, -1, -1, 0);
+			}
+			else if (strcmp(key, "OU") == 0)
+			{
+				X509_NAME_add_entry_by_txt(name, "OU", MBSTRING_ASC, (const unsigned char *)value, -1, -1, 0);
+			}
+			else if (strcmp(key, "CN") == 0)
+			{
+				X509_NAME_add_entry_by_txt(name, "CN", MBSTRING_ASC, (const unsigned char *)value, -1, -1, 0);
+			}
+
+			free(key);
+			free(value);
+		}
+		else
+		{
+			p++;
+		}
+	}
+
+	// 设置公钥到 CSR
+	if (!X509_REQ_set_pubkey(req, pkey))
+	{
+		handle_openssl_error("Failed to set public key in CSR");
+	}
+
+	// 使用私钥签名 CSR
+	if (!X509_REQ_sign(req, pkey, EVP_sha256()))
+	{
+		handle_openssl_error("Failed to sign CSR");
+	}
+
+	// 保存 CSR 到文件
+	bp = BIO_new_file(csr_file, "w");
+	if (!PEM_write_bio_X509_REQ(bp, req))
+	{
+		handle_openssl_error("Failed to write CSR");
+	}
+
+	printf("Created certificate signing request: %s\n", csr_file);
+
+	// 清理资源
+	BIO_free(bp);
+	EVP_PKEY_free(pkey);
+
+	return req;
+}
+
+// 3. 使用 CA 签发证书
+void sign_certificate_with_ca(X509_REQ *req, const char *ca_cert_file, const char *ca_key_file, const char *crt_file)
+{
+	X509 *ca_cert = NULL, *cert = NULL;
+	EVP_PKEY *ca_pkey = NULL, *req_pubkey = NULL;
+	FILE *fp = NULL;
+	BIO *bp = NULL;
+
+	// 加载 CA 证书
+	fp = fopen(ca_cert_file, "r");
+	if (!fp)
+	{
+		fprintf(stderr, "Failed to open CA certificate: %s\n", ca_cert_file);
+		exit(EXIT_FAILURE);
+	}
+	ca_cert = PEM_read_X509(fp, NULL, NULL, NULL);
+	fclose(fp);
+	if (!ca_cert)
+	{
+		handle_openssl_error("Failed to read CA certificate");
+	}
+
+	// 加载 CA 私钥
+	fp = fopen(ca_key_file, "r");
+	if (!fp)
+	{
+		fprintf(stderr, "Failed to open CA private key: %s\n", ca_key_file);
+		exit(EXIT_FAILURE);
+	}
+	ca_pkey = PEM_read_PrivateKey(fp, NULL, NULL, NULL);
+	fclose(fp);
+	if (!ca_pkey)
+	{
+		handle_openssl_error("Failed to read CA private key");
+	}
+
+	// 创建新证书
+	cert = X509_new();
+	if (!cert)
+	{
+		handle_openssl_error("Failed to create X509 certificate");
+	}
+
+	// 设置证书版本 (V3)
+	X509_set_version(cert, 2L); // Version 3 (0-indexed: 2)
+
+	// 设置序列号 (随机)
+	ASN1_INTEGER *sno = ASN1_INTEGER_new();
+	BIGNUM *bn = BN_new();
+	BN_pseudo_rand(bn, 64, 0, 0);
+	BN_to_ASN1_INTEGER(bn, sno);
+	X509_set_serialNumber(cert, sno);
+
+	// 设置有效期
+	X509_gmtime_adj(X509_get_notBefore(cert), 0);					  // 现在开始
+	X509_gmtime_adj(X509_get_notAfter(cert), DAYS_VALID * 24 * 3600); // 3650天后
+
+	// 从 CSR 复制主题
+	X509_set_subject_name(cert, X509_REQ_get_subject_name(req));
+
+	// 设置颁发者 (CA 的主题)
+	X509_set_issuer_name(cert, X509_get_subject_name(ca_cert));
+
+	// 从 CSR 复制公钥
+	req_pubkey = X509_REQ_get_pubkey(req);
+	X509_set_pubkey(cert, req_pubkey);
+
+	// 添加扩展 (基本约束)
+	X509V3_CTX ctx;
+	X509V3_set_ctx(&ctx, ca_cert, cert, NULL, NULL, 0);
+
+	X509_EXTENSION *ex = X509V3_EXT_conf_nid(NULL, &ctx, NID_basic_constraints, "critical,CA:FALSE");
+	if (ex)
+	{
+		X509_add_ext(cert, ex, -1);
+		X509_EXTENSION_free(ex);
+	}
+
+	// 添加扩展 (密钥用法)
+	ex = X509V3_EXT_conf_nid(NULL, &ctx, NID_key_usage, "critical,digitalSignature,keyEncipherment");
+	if (ex)
+	{
+		X509_add_ext(cert, ex, -1);
+		X509_EXTENSION_free(ex);
+	}
+
+	// 添加扩展 (扩展密钥用法)
+	ex = X509V3_EXT_conf_nid(NULL, &ctx, NID_ext_key_usage, "serverAuth,clientAuth");
+	if (ex)
+	{
+		X509_add_ext(cert, ex, -1);
+		X509_EXTENSION_free(ex);
+	}
+
+	// 使用 CA 私钥签名证书
+	if (!X509_sign(cert, ca_pkey, EVP_sha256()))
+	{
+		handle_openssl_error("Failed to sign certificate");
+	}
+
+	// 保存证书到文件
+	bp = BIO_new_file(crt_file, "w");
+	if (!PEM_write_bio_X509(bp, cert))
+	{
+		handle_openssl_error("Failed to write certificate");
+	}
+
+	printf("Signed certificate with CA: %s\n", crt_file);
+
+	// 清理资源
+	BIO_free(bp);
+	X509_free(cert);
+	X509_free(ca_cert);
+	EVP_PKEY_free(ca_pkey);
+	EVP_PKEY_free(req_pubkey);
+	ASN1_INTEGER_free(sno);
+	BN_free(bn);
+}
+
+bool sign_serverCert(std::string csrfile, std::string cafile, std::string cakey, std::string servercert, std::string serverkey)
+{
+	// 主题信息
+	const char *subject = "/C=CN/ST=Shanxi/L=Xian/O=EXEC/OU=DS/CN=10.0.2.15";
+
+	// 1. 生成 RSA 私钥
+	RSA *rsa = generate_rsa_key(serverkey.c_str());
+
+	// 2. 创建证书签名请求 (CSR)
+	X509_REQ *req = create_certificate_signing_request(rsa, csrfile.c_str(), subject);
+
+	// 3. 使用 CA 签发证书
+	sign_certificate_with_ca(req, cafile.c_str(), cakey.c_str(), servercert.c_str());
+
+	// 清理资源
+	// RSA_free(rsa);
+	X509_REQ_free(req);
+
+	// 清理 OpenSSL
+	// EVP_cleanup();
+	// ERR_free_strings();
+
+	printf("Certificate generated: server.crt\n");
 }
