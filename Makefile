@@ -5,7 +5,7 @@ TARGET=httpserver
 
 LDFLAGS=-L./libjson -L/usr/local/lib
 IFLAGS=-I./libjson -I/usr/local/include
-LIB=-levent -levent_openssl -lssl -lcrypto -lJsonObjects -liniparser
+LIB=-levent -levent_openssl -lssl -lcrypto -lJsonObjects -liniparser -lpthread
 
 OBJS = main.o openssl_base.o https_server.o certProtocol.o certMgr.o utils.o ini_wrapper.o 
 $(TARGET): $(OBJS)

@@ -30,13 +30,25 @@
 
 #include "openssl_base.hpp"
 #include "certProtocol.hpp"
+#include "certMgr.hpp"
+
+#define SERVER1_PORT 8443
+#define SERVER2_PORT 9443
 
 void http_request_handler(struct evhttp_request *req, void *arg);
 
-SSL_CTX *create_ssl_ctx(const char * cacert, const char *servercert, const char *serverkey);
+SSL_CTX *create_ssl_ctx(const char *servercert, const char *serverkey);
+
+SSL_CTX *create_ssl_context(const char* cafile, const char *servercert, const char *serverkey);
+
+int setup_https_server(server_context *ctx);
 
 struct bufferevent *create_ssl_bufferevent(struct event_base *base, void *arg);
 
+void makeResponse(struct evhttp_request *req, std::string body, std::string clientIp,
+				  server_context *pServerCertHandle);
+
 void clearResource();
+
 
 #endif

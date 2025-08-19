@@ -148,13 +148,13 @@ bool saveContentToFile(const std::string &content, const std::string &filename)
 	int fd = open(filename.c_str(), O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);
 	if (fd == -1)
 	{
-		printf("Failed to open file:%s.", filename.c_str());
+		printf("Failed to open file:%s.\n", filename.c_str());
 		return false;
 	}
 
 	if (flock(fd, LOCK_EX) == -1)
 	{
-		printf("Failed to lock file:%s.", filename.c_str());
+		printf("Failed to lock file:%s.\n", filename.c_str());
 		close(fd);
 		return false;
 	}
@@ -162,10 +162,11 @@ bool saveContentToFile(const std::string &content, const std::string &filename)
 	write(fd, content.data(), content.size());
 	flock(fd, LOCK_UN);
 	close(fd);
+	printf("save file %s successfule.\n", filename.c_str());
 	return true;
 }
 
-bool generate_ca_certificate(std::string cakey_path, std::string cacert_path)
+bool generate_ca_certificate(std::string cacert_path, std::string cakey_path)
 {
 	RSA *rsa = NULL;
 	X509 *ca_cert = NULL;
@@ -412,8 +413,8 @@ bool sign_clientcert(std::string csrfile, std::string cafile, std::string cakeyf
 	X509_set_issuer_name(new_cert, X509_get_subject_name(ca_cert));
 
 	// 6. 设置有效期（3650 天）
-	X509_gmtime_adj(X509_get_notBefore(new_cert), 0);				// 现在生效
-	X509_gmtime_adj(X509_get_notAfter(new_cert), 3650 * 24 * 3600); // 10 年后过期
+	X509_gmtime_adj(X509_get_notBefore(new_cert), 0);
+	X509_gmtime_adj(X509_get_notAfter(new_cert), 7 * 24 * 3600); 
 
 	// 7. 设置公钥（从 CSR 复制）
 	EVP_PKEY *csr_pubkey = X509_REQ_get_pubkey(csr);
@@ -828,10 +829,15 @@ void sign_certificate_with_ca(X509_REQ *req, const char *ca_cert_file, const cha
 	BN_free(bn);
 }
 
-bool sign_serverCert(std::string csrfile, std::string cafile, std::string cakey, std::string servercert, std::string serverkey)
+bool sign_serverCert(server_context serverCertHandle)
 {
+	std::string cafile = serverCertHandle.cacert_path;
+	std::string cakey = serverCertHandle.cakey_path;
+	std::string servercert = serverCertHandle.ser_cert_path;
+	std::string serverkey = serverCertHandle.ser_key_path;
+	std::string csrfile = serverCertHandle.ser_csr_path;
 	// 主题信息
-	const char *subject = "/C=CN/ST=Shanxi/L=Xian/O=EXEC/OU=DS/CN=10.0.2.15";
+	const char *subject = "/C=CN/ST=Shanxi/L=Xian/O=EXEC/OU=DS/CN=10.166.64.18";
 
 	// 1. 生成 RSA 私钥
 	RSA *rsa = generate_rsa_key(serverkey.c_str());

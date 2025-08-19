@@ -8,6 +8,7 @@
 
 bool parseCSRequest(const std::string &request, CSR_REQ_BODY &reqbody)
 {
+	printf("parseCSRequest......\n");
 	bool bret = false;
 	do
 	{
@@ -31,6 +32,7 @@ bool parseCSRequest(const std::string &request, CSR_REQ_BODY &reqbody)
 			bret = true;
 		}
 	} while (0);
+    printf("parseCSRequest ok\n");
 	return bret;
 }
 
@@ -124,7 +126,7 @@ std::string BuildChallengeCertRespBody()
 
 	root[POST_BODY_ISSUECA] = signCA;
 	root[POST_BODY_CERTIFICATE] = certificate;
-	root[POST_BODY_EXPIREDATE] = (int)GetNextDaysTimeStamp(365);
+	root[POST_BODY_EXPIREDATE] = (int)GetNextDaysTimeStamp(5);
 	root[POST_BODY_SERIAL_NUMBER] = "123456789";
 	Json::Value mqttBroker;
 
@@ -172,7 +174,7 @@ std::string BuildRenewCertRespBody()
 	root["certificate"] = certificate;
 
 	root["serialNumber"] = "72:89:6e:f3:7c:38:8d:93:f0:72:2c:71:56:ed:ee:f8:46:23:f1:15";
-	root["expirationDate"] = (int)GetNextDaysTimeStamp(1);
+	root["expirationDate"] = (int)GetNextDaysTimeStamp(7);
 
 	std::string strOut = root.toString();
 

@@ -1,74 +1,122 @@
+#include <pthread.h>
 
-
+#include "certMgr.hpp"
 #include "certProtocol.hpp"
 #include "https_server.hpp"
-#include "certMgr.hpp"
+
+int start_https_server(server_context *pServerCtx)
+{
+	// 创建SSL上下文
+	pServerCtx->ssl_ctx = create_ssl_ctx(pServerCtx->ser_cert_path.c_str(), pServerCtx->ser_key_path.c_str());
+	if (!pServerCtx->ssl_ctx)
+	{
+		return -1;
+	}
+
+	// 启动HTTPS服务器
+	if (setup_https_server(pServerCtx) != 0)
+	{
+		SSL_CTX_free(pServerCtx->ssl_ctx);
+		return -1;
+	}
+
+	return 0;
+}
+
+int start_https_server2(server_context *pServerCtx)
+{
+	// 创建SSL上下文
+	pServerCtx->ssl_ctx = create_ssl_context(pServerCtx->cacert_path.c_str(), pServerCtx->ser_cert_path.c_str(),
+											 pServerCtx->ser_key_path.c_str());
+	if (!pServerCtx->ssl_ctx)
+	{
+		return -1;
+	}
+
+	// 启动HTTPS服务器
+	if (setup_https_server(pServerCtx) != 0)
+	{
+		SSL_CTX_free(pServerCtx->ssl_ctx);
+		return -1;
+	}
+
+	return 0;
+}
 
 int main(int argc, char **argv)
 {
 	struct event_base *base;
-	struct evhttp *http;
-	struct evhttp_bound_socket *handle;
-	SSL_CTX *ssl_ctx;
 
-    // 初始化OpenSSL
+	// 初始化OpenSSL
 	init_openssl();
 
-    std::string cacert_path = "./output/ca.crt";
-	std::string cakey_path = "./output/ca.key";
-	generate_ca_certificate(cakey_path, cacert_path);
+	server_context server1_ctx;
+	server1_ctx.cacert_path = "./output/ca.crt";
+	server1_ctx.cakey_path = "./output/ca.key";
 
-	std::string csrfile = "./output/server.csr";
-	std::string serverCert = "./output/server.crt";
-    std::string serverKey = "./output/server.key";
+	generate_ca_certificate(server1_ctx.cacert_path, server1_ctx.cakey_path);
 
-	sign_serverCert(csrfile, cacert_path, cakey_path, serverCert, serverKey);
+	server1_ctx.ser_csr_path = "./output/server.csr";
+	server1_ctx.ser_cert_path = "./output/server.crt";
+	server1_ctx.ser_key_path = "./output/server.key";
 
-	// 创建SSL上下文
-	ssl_ctx = create_ssl_ctx(cacert_path.c_str(), serverCert.c_str(), serverKey.c_str());
-	if (!ssl_ctx)
-	{
-		return 1;
-	}
+	sign_serverCert(server1_ctx);
 
+	server1_ctx.client_cert_path = "output/client.crt";
+	server1_ctx.client_csr_path = "output/client.csr";
+	server1_ctx.extfile_path = "output/v3.ext";
 	// 初始化libevent
 	base = event_base_new();
 	if (!base)
 	{
 		fprintf(stderr, "Failed to create event base\n");
-		return 1;
+		return -1;
 	}
+	server1_ctx.base = base;
+	server1_ctx.port = SERVER1_PORT;
 
-	// 创建一个HTTP服务器
-	http = evhttp_new(base);
-	if (!http)
-	{
-		fprintf(stderr, "Failed to create evhttp\n");
-		return 1;
-	}
+	if(start_https_server(&server1_ctx)< 0)
+    {
+        event_base_free(base);
+        return -1;
+    }
 
-	// 设置HTTP请求处理回调函数
-	evhttp_set_gencb(http, http_request_handler, NULL);
+    server_context server2_ctx;
 
-	// 设置自定义bufferevent回调函数
-	evhttp_set_bevcb(http, create_ssl_bufferevent, ssl_ctx);
+	server2_ctx.cacert_path = "./output/ca.crt";
+	server2_ctx.cakey_path = "./output/ca.key";
 
-	// 绑定到指定端口
-	handle = evhttp_bind_socket_with_handle(http, "0.0.0.0", 8443);
-	if (!handle)
-	{
-		fprintf(stderr, "Failed to bind to port %s\n", argv[3]);
-		return 1;
-	}
+	server2_ctx.ser_csr_path = "./renewcert/server.csr";
+	server2_ctx.ser_cert_path = "./renewcert/server.crt";
+	server2_ctx.ser_key_path = "./renewcert/server.key";
+
+	sign_serverCert(server2_ctx);
+
+	server2_ctx.client_cert_path = "renewcert/client.crt";
+	server2_ctx.client_csr_path = "renewcert/client.csr";
+	server2_ctx.extfile_path = "renewcert/v3.ext";
+
+    server2_ctx.base = base;
+	server2_ctx.port = SERVER2_PORT;
+
+	if(start_https_server2(&server2_ctx)< 0)
+    {
+        event_base_free(base);
+        return -1;
+    }
 
 	// 进入事件循环
 	event_base_dispatch(base);
 
 	// 清理
 	clearResource();
-	evhttp_free(http);
+
+	evhttp_free(server1_ctx.http);
+	SSL_CTX_free(server1_ctx.ssl_ctx);
+
+    evhttp_free(server2_ctx.http);
+	SSL_CTX_free(server2_ctx.ssl_ctx);
 	event_base_free(base);
-	SSL_CTX_free(ssl_ctx);
 	cleanup_openssl();
 
 	return 0;
