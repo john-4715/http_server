@@ -120,7 +120,7 @@ int setup_https_server(server_context *server_ctx)
 		return -1;
 	}
 
-	printf("The https server has started successfully, server ip : %d.\n\n\n", server_ctx->port);
+	printf("The https server has started successfully, server port : %d.\n\n\n", server_ctx->port);
 	return 0;
 }
 
@@ -341,52 +341,6 @@ void http_request_handler(struct evhttp_request *req, void *arg)
 		makeResponse(req, body, clientIp, server_ctx);
 	}
 	else if (req->type == EVHTTP_REQ_POST)
-	{
-		fprintf(stdout, "Client sent a POST request.\n");
-
-		// 获取请求头部
-		struct evkeyvalq *headers = evhttp_request_get_input_headers(req);
-		printf("Request Headers:\n");
-		for (struct evkeyval *header = headers->tqh_first; header; header = header->next.tqe_next)
-		{
-			printf("%s: %s\n", header->key, header->value);
-		}
-
-		fprintf(stdout, "POST Body len(%ld)\n", body_size);
-
-		std::string buff = (char *)evbuffer_pullup(req->input_buffer, -1);
-		std::string body = buff.substr(0, body_size);
-		fprintf(stdout, "Body:[%s]\n", body.c_str());
-		makeResponse(req, body, clientIp, server_ctx);
-	}
-}
-
-void http_renewcert_handler(struct evhttp_request *req, void *arg)
-{
-	if (req == NULL)
-	{
-		fprintf(stderr, "req == NULL\n");
-		return;
-	}
-
-	server_context *server_ctx = (server_context *)arg;
-	fprintf(stdout, "-----------------------------------------------\n");
-	fprintf(stdout, "http server get message from client.\n");
-	fprintf(stdout, "-----------------------------------------------\n");
-	// 获取客户端IP和端口
-	struct evhttp_connection *conn = evhttp_request_get_connection(req);
-	char *client_ip = NULL;
-	ev_uint16_t client_port = 0;
-	evhttp_connection_get_peer(conn, &client_ip, &client_port);
-
-	fprintf(stdout, "Client IP: %s, Port: %d\n", client_ip, client_port);
-	fprintf(stdout, "Request URI: %s\n", evhttp_request_get_uri(req));
-
-	std::string clientIp = client_ip;
-	// 获取post body长度
-	size_t body_size = evbuffer_get_length(req->input_buffer);
-
-	if (req->type == EVHTTP_REQ_POST)
 	{
 		fprintf(stdout, "Client sent a POST request.\n");
 
